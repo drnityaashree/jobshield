@@ -94,6 +94,88 @@ export interface InternshipRiskAssessment {
   notes: string[];
 }
 
+export interface EvidenceGraphNode {
+  id: string;
+  type: 'employer' | 'job_opportunity' | 'recruiter' | 'channel' | 'financial' | 'pii';
+  label: string;
+  value: string;
+  status: 'verified' | 'suspicious' | 'neutral' | 'hazardous';
+  details?: string;
+}
+
+export interface EvidenceGraphEdge {
+  from: string;
+  to: string;
+  relation: string;
+  isConsistent: boolean;
+  notes?: string;
+}
+
+export interface EvidenceGraph {
+  nodes: EvidenceGraphNode[];
+  edges: EvidenceGraphEdge[];
+  inconsistencies: string[];
+}
+
+export interface ConflictingEvidence {
+  hasConflict: boolean;
+  conflictType: 'domain_impersonation' | 'channel_prestige_mismatch' | 'unrealistic_compensation' | 'premature_credential_harvesting' | 'none';
+  headline: string;
+  explanation: string;
+  employerStatus: string;
+  opportunityStatus: string;
+}
+
+export interface ResearchTraceStep {
+  stepNumber: number;
+  title: string;
+  description: string;
+  status: 'completed' | 'warning' | 'flagged';
+  timestamp: string;
+  findings: string[];
+}
+
+export interface ActionPlanItem {
+  id: string;
+  title: string;
+  priority: 'critical' | 'high' | 'medium' | 'recommended';
+  action: string;
+  why: string;
+  actionType: 'do_not_pay' | 'block_contact' | 'verify_careers' | 'request_official_email' | 'report_fraud' | 'proceed_safely';
+}
+
+export interface VerifyItYourselfTool {
+  id: string;
+  title: string;
+  instruction: string;
+  searchQuery?: string;
+  directUrl?: string;
+  iconType: 'google' | 'linkedin' | 'whois' | 'mca' | 'careers';
+}
+
+export interface ContactCompanyGuide {
+  suggestedAction: string;
+  domainToContact?: string;
+  officialCareersUrl?: string;
+  hrEmailPattern?: string;
+  inquiryTemplate: {
+    subject: string;
+    body: string;
+  };
+}
+
+export interface AnalysisConfidenceInfo {
+  level: 'HIGH' | 'MEDIUM' | 'LOW';
+  score: number; // 0 - 100
+  reasons: string[];
+  dataCoverage: {
+    employerPresence: boolean;
+    channelIdentified: boolean;
+    jobSpecificMatch: boolean;
+    recruiterIdentified: boolean;
+  };
+}
+
 export interface JobPostingAnalysis {
   detectedJobTitle?: string;
   detectedCompensation?: string;
@@ -195,9 +277,17 @@ export interface AnalyzeResponse {
   success: boolean;
   error?: string;
   extractedText?: string;
+  opportunityTrustScore: number; // 0 - 100
   companyResearch: CompanyResearchResult;
   jobAnalysis: JobPostingAnalysis;
   riskBreakdown: RiskBreakdown;
+  evidenceGraph: EvidenceGraph;
+  conflictingEvidence: ConflictingEvidence;
+  confidenceInfo: AnalysisConfidenceInfo;
+  researchTrace: ResearchTraceStep[];
+  actionPlan: ActionPlanItem[];
+  verifyItYourself: VerifyItYourselfTool[];
+  contactCompanyGuide: ContactCompanyGuide;
   sources: SourceEvidence[];
   searchDiagnostics: SearchDiagnostics;
 }

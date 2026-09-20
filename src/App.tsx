@@ -2,11 +2,18 @@ import React, { useState, useEffect } from 'react';
 import { Header } from './components/Header';
 import { JobInputForm } from './components/JobInputForm';
 import { ShouldIApplyVerdict } from './components/ShouldIApplyVerdict';
+import { ConflictingEvidenceBanner } from './components/ConflictingEvidenceBanner';
+import { EvidenceGraphCard } from './components/EvidenceGraphCard';
+import { StudentActionPlanCard } from './components/StudentActionPlanCard';
+import { VerifyItYourselfCard } from './components/VerifyItYourselfCard';
+import { ContactCompanyCard } from './components/ContactCompanyCard';
+import { AnalysisConfidenceCard } from './components/AnalysisConfidenceCard';
 import { PreFlightChecklist } from './components/PreFlightChecklist';
 import { RiskScoreCard } from './components/RiskScoreCard';
 import { CompanyProfileCard } from './components/CompanyProfileCard';
 import { ScamSignalsCard } from './components/ScamSignalsCard';
 import { EvidenceSourcesCard } from './components/EvidenceSourcesCard';
+import { ResearchTraceCard } from './components/ResearchTraceCard';
 import { ShareReportModal } from './components/ShareReportModal';
 import { RecentChecks } from './components/RecentChecks';
 import { AnalyzeResponse, TestCase, RecentVerification } from './types';
@@ -312,7 +319,12 @@ export default function App() {
               </span>
             </div>
 
-            {/* 1. TOP VERDICT CARD: "Should I Apply?" 10-Second Student Scan */}
+            {/* 1. Conflicting Evidence Warning (if brand impersonation or channel divergence detected) */}
+            {analysisResult.conflictingEvidence && (
+              <ConflictingEvidenceBanner conflict={analysisResult.conflictingEvidence} />
+            )}
+
+            {/* 2. TOP VERDICT CARD: "Should I Apply?" 10-Second Student Scan */}
             <ShouldIApplyVerdict
               verdict={analysisResult.jobAnalysis.verdict}
               riskBreakdown={analysisResult.riskBreakdown}
@@ -321,27 +333,67 @@ export default function App() {
               onOpenShare={() => setIsShareModalOpen(true)}
             />
 
-            {/* 2. Interactive "Before You Apply" Checklist */}
+            {/* 3. Multi-Dimensional Opportunity Evidence Graph */}
+            {analysisResult.evidenceGraph && (
+              <EvidenceGraphCard
+                graph={analysisResult.evidenceGraph}
+                opportunityTrustScore={analysisResult.opportunityTrustScore}
+              />
+            )}
+
+            {/* 4. What To Do Next: Student Defense Plan */}
+            {analysisResult.actionPlan && analysisResult.actionPlan.length > 0 && (
+              <StudentActionPlanCard actionPlan={analysisResult.actionPlan} />
+            )}
+
+            {/* 5. Interactive "Before You Apply" Checklist */}
             <PreFlightChecklist checklist={analysisResult.jobAnalysis.checklist} />
 
-            {/* 3. Risk Score & Explainable "Why This Score?" Card */}
-            <RiskScoreCard
-              riskBreakdown={analysisResult.riskBreakdown}
-              companyResearch={analysisResult.companyResearch}
-            />
+            {/* 6. Verify It Yourself Toolkit */}
+            {analysisResult.verifyItYourself && analysisResult.verifyItYourself.length > 0 && (
+              <VerifyItYourselfCard tools={analysisResult.verifyItYourself} />
+            )}
 
-            {/* 4. Discovered Company Profile Card */}
+            {/* 7. Contact Official HR & Talent Team */}
+            {analysisResult.contactCompanyGuide && (
+              <ContactCompanyCard
+                guide={analysisResult.contactCompanyGuide}
+                companyName={analysisResult.companyResearch.company_name}
+              />
+            )}
+
+            {/* 8. Risk Score & Confidence Analysis Grid */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2">
+                <RiskScoreCard
+                  riskBreakdown={analysisResult.riskBreakdown}
+                  companyResearch={analysisResult.companyResearch}
+                />
+              </div>
+              <div>
+                {analysisResult.confidenceInfo && (
+                  <AnalysisConfidenceCard confidence={analysisResult.confidenceInfo} />
+                )}
+              </div>
+            </div>
+
+            {/* 9. Discovered Company Profile Card */}
             <CompanyProfileCard company={analysisResult.companyResearch} />
 
-            {/* 5. Scam Signals, Student Traps & Channel Diagnostics */}
+            {/* 10. Scam Signals, Student Traps & Channel Diagnostics */}
             <ScamSignalsCard analysis={analysisResult.jobAnalysis} />
 
-            {/* 6. Autonomous Web Evidence & Sources */}
+            {/* 11. Autonomous Web Evidence & Sources */}
             <EvidenceSourcesCard
               sources={analysisResult.sources}
               diagnostics={analysisResult.searchDiagnostics}
               extractedText={analysisResult.extractedText}
             />
+
+            {/* 12. Transparent Research Trace */}
+            {analysisResult.researchTrace && analysisResult.researchTrace.length > 0 && (
+              <ResearchTraceCard trace={analysisResult.researchTrace} />
+            )}
           </div>
         )}
       </main>

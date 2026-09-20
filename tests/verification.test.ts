@@ -108,8 +108,47 @@ async function runTests() {
   );
   assert.equal(overrideRes.companyResearch.company_name, 'Stripe');
   assert.equal(overrideRes.companyResearch.company_source, 'override');
+  assert.ok(overrideRes.opportunityTrustScore > 0, 'Must produce opportunity trust score');
+  assert.ok(overrideRes.evidenceGraph.nodes.length >= 5, 'Must construct evidence graph nodes');
 
-  console.log('✅ ALL 9 TEST SUITES PASSED SUCCESSFULLY!');
+  // TEST 10: Opportunity Evidence Graph & Brand Impersonation Conflict
+  console.log('Test 10: Brand Impersonation & Conflicting Evidence Detection');
+  const impersonationRes = await analyzer.analyze(
+    'Congratulations from Microsoft! Please complete your onboarding verification at: http://microsoft-careers-fasttrack.xyz/onboard/student and email national ID copy to microsoft.recruitment.team.apac@gmail.com. Deposit ₹3,000 for equipment dispatch.',
+    undefined,
+    undefined,
+    'Microsoft'
+  );
+  assert.equal(impersonationRes.conflictingEvidence.hasConflict, true, 'Must detect conflicting evidence');
+  assert.ok(
+    impersonationRes.conflictingEvidence.headline.includes('Impersonation') ||
+      impersonationRes.conflictingEvidence.headline.includes('Brand') ||
+      impersonationRes.conflictingEvidence.headline.includes('Unauthorized'),
+    `Conflict headline should clearly flag impersonation, got: ${impersonationRes.conflictingEvidence.headline}`
+  );
+  assert.ok(impersonationRes.opportunityTrustScore < 40, 'Opportunity trust score should be low for impersonated scam');
+  assert.ok(impersonationRes.actionPlan.length > 0, 'Must generate actionable student defense steps');
+
+  // TEST 11: Task Scam & Student Action Plan
+  console.log('Test 11: Task Scam & Student Defense Protocol');
+  const taskRes = await analyzer.analyze(
+    'Part-time Student Job! Work 30 minutes daily: Like and subscribe to YouTube channels. Earn ₹3,000/day. Join Telegram: https://t.me/media_tasks',
+    undefined,
+    undefined
+  );
+  assert.equal(taskRes.jobAnalysis.internshipAssessment.isTaskScamPattern, true);
+  assert.ok(taskRes.actionPlan.some((a) => a.actionType === 'block_contact'));
+
+  // TEST 12: Pay-to-Intern Scheme Detection
+  console.log('Test 12: Pay-to-Intern Mandatory Training Fee');
+  const payToInternAnalysis = analyzer.analyzeJobSignals(
+    'Selected for Web Dev Internship! Must pay mandatory training and documentation fee of ₹1,999 to activate portal: https://intern-portal.in/pay',
+    'intern-portal.in'
+  );
+  assert.equal(payToInternAnalysis.paymentRequests.detected, true);
+  assert.ok(payToInternAnalysis.checklist.some((c) => c.category === 'payment' && c.status === 'critical'));
+
+  console.log('✅ ALL 12 TEST SUITES PASSED SUCCESSFULLY!');
 }
 
 runTests().catch((err) => {

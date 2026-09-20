@@ -1,17 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { Header } from './components/Header';
 import { JobInputForm } from './components/JobInputForm';
+import { ShouldIApplyVerdict } from './components/ShouldIApplyVerdict';
+import { PreFlightChecklist } from './components/PreFlightChecklist';
 import { RiskScoreCard } from './components/RiskScoreCard';
 import { CompanyProfileCard } from './components/CompanyProfileCard';
 import { ScamSignalsCard } from './components/ScamSignalsCard';
 import { EvidenceSourcesCard } from './components/EvidenceSourcesCard';
-import { AnalyzeResponse, TestCase } from './types';
-import { ShieldCheck, AlertCircle, RefreshCw } from 'lucide-react';
+import { ShareReportModal } from './components/ShareReportModal';
+import { RecentChecks } from './components/RecentChecks';
+import { AnalyzeResponse, TestCase, RecentVerification } from './types';
+import { ShieldCheck, AlertCircle, Sparkles, CheckCircle2, ShieldAlert } from 'lucide-react';
+
+const RECENT_CHECKS_KEY = 'jobshield_recent_verifications_v1';
 
 const FALLBACK_TEST_CASES: TestCase[] = [
   {
     id: 'clearao-analytics',
-    name: 'Clearao Analytics (Target Bug Case)',
+    name: 'Clearao Analytics (Phonetic Resolution)',
     company: 'Clearao Analytics',
     badge: 'Phonetic/Variant Match',
     description:
@@ -23,21 +29,8 @@ Location: Remote
 About Us: Clearo is an AI business automation provider building AI-powered receptionists and intelligent lead automation workflows.
 Responsibilities: Help businesses streamline customer workflows and lead follow-up.
 Requirements: Basic understanding of AI tools and workflow automation.
-Apply: Send your resume to clearo.analytics@gmail.com or connect on LinkedIn.`,
-  },
-  {
-    id: 'stripe-intern',
-    name: 'Stripe - SWE Intern',
-    company: 'Stripe',
-    badge: 'Legitimate Tech',
-    description:
-      'Legitimate tech company hiring via official careers & certified Greenhouse ATS portal.',
-    text: `Stripe is hiring Software Engineering Interns for Summer 2026.
-Location: San Francisco, CA / Remote
-About Stripe: Stripe is a financial infrastructure platform for the internet. Millions of companies—from the world's largest enterprises to the most ambitious startups—use Stripe to accept payments, grow their revenue, and accelerate new business opportunities.
-Apply directly on our careers portal: https://boards.greenhouse.io/stripe/jobs/4829103
-Compensation: $55/hour + housing stipend.
-No upfront payment or fees required. Equal opportunity employer.`,
+Apply: Send your resume to clearo.analytics@gmail.com or connect on LinkedIn.
+Note: No registration or training fee is ever charged.`,
   },
   {
     id: 'telegram-scam',
@@ -45,19 +38,33 @@ No upfront payment or fees required. Equal opportunity employer.`,
     company: 'Apex FastTrack Global',
     badge: 'Critical Scam Alert',
     description:
-      'Common task fraud requesting ₹5,000 refundable training deposit and communicating exclusively via Telegram.',
+      'Common student trap: promises ₹45k-₹65k/month for typing, demands ₹5,000 refundable training deposit via Telegram.',
     text: `URGENT REQUIREMENT: Online Typing & Data Entry Executive.
 Company: Apex FastTrack Global
 Salary: ₹45,000 - ₹65,000 per month (Daily Payout available).
-Eligibility: Anyone can apply. No prior experience required. Students and housewives welcome.
+Eligibility: Anyone can apply. No prior experience required. Students and freshers welcome.
 Limited slots left! Apply within 2 hours to confirm your seat.
 To activate your employee portal and receive company laptop, pay a refundable security deposit of ₹5,000 via UPI.
 Contact HR Priya on Telegram: @Priya_ApexGlobal_Recruiter
 Immediate joining! Send your Aadhaar and bank account details for verification.`,
   },
   {
+    id: 'stripe-intern',
+    name: 'Stripe - SWE Intern (Authentic Enterprise)',
+    company: 'Stripe',
+    badge: 'Legitimate Tech',
+    description:
+      'Legitimate tech company hiring via official careers & certified Greenhouse ATS portal.',
+    text: `Stripe is hiring Software Engineering Interns for Summer 2026.
+Location: Bengaluru / Remote
+About Stripe: Stripe is a financial infrastructure platform for the internet. Millions of companies use Stripe to accept payments and grow their revenue.
+Apply directly on our careers portal: https://boards.greenhouse.io/stripe/jobs/4829103
+Compensation: ₹65,000/month stipend + equipment allowance.
+No upfront payment or fees required. Equal opportunity employer.`,
+  },
+  {
     id: 'microsoft-impersonation',
-    name: 'Microsoft Impersonation',
+    name: 'Microsoft Impersonation (Domain Divergence)',
     company: 'Microsoft',
     badge: 'Domain Divergence',
     description:
@@ -67,20 +74,20 @@ Package: ₹14,50,000 per annum.
 Role: Manage Azure customer enterprise deployments.
 Please fill the mandatory candidate intake form immediately: http://microsoft-careers-fasttrack.xyz/apply-now
 For questions, reply to recruiter: microsoft.hiring.team2026@gmail.com
-Offer valid for 24 hours only.`,
+Send your resume, Aadhaar, and PAN copy to reserve your slot. Offer valid for 24 hours only.`,
   },
   {
-    id: 'nonexistent-startup',
-    name: 'Fictional Startup',
-    company: 'Xylophone Quantum Dynamics LLC',
-    badge: 'Unverified Footprint',
+    id: 'youtube-task-scam',
+    name: 'YouTube Task Scam (Daily Commission Bait)',
+    company: 'Digital Media Surge',
+    badge: 'Task Fraud',
     description:
-      'Completely fictional startup name. Verifies JobShield reports "Limited public digital footprint" rather than inventing fake data.',
-    text: `Hiring: Quantum Protocol Architect
-Employer: Xylophone Quantum Dynamics LLC
-Location: Remote
-Develop next-generation quantum-resistant protocols for decentralized nodes.
-Apply with your portfolio to founders@xylophonequantum.fake`,
+      'Part-time student trap: promises ₹2,500-₹5,000/day for liking videos, eventually freezing money in fake crypto task portals.',
+    text: `Work From Home Part-Time Job for College Students!
+Company: Digital Media Surge
+Earn ₹3,000 to ₹5,000 daily by liking YouTube videos and rating hotels on Google Maps.
+No interview, instant joining. Payouts credited directly to your UPI ID every evening.
+To get started, contact our task coordinator on Telegram: https://t.me/digital_media_task_manager`,
   },
 ];
 
@@ -91,6 +98,17 @@ export default function App() {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [loadingStage, setLoadingStage] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+
+  // Local storage for student's recent checks
+  const [recentChecks, setRecentChecks] = useState<RecentVerification[]>(() => {
+    try {
+      const stored = localStorage.getItem(RECENT_CHECKS_KEY);
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
 
   useEffect(() => {
     // Check server health
@@ -111,6 +129,39 @@ export default function App() {
         // Fallback already preset
       });
   }, []);
+
+  const saveRecentCheck = (data: AnalyzeResponse) => {
+    const newEntry: RecentVerification = {
+      id: String(Date.now()),
+      timestamp: new Date().toISOString(),
+      companyName: data.companyResearch.company_name,
+      jobTitle: data.jobAnalysis.detectedJobTitle,
+      overallRiskScore: data.riskBreakdown.overallRiskScore,
+      riskLevel: data.riskBreakdown.riskLevel,
+      verdictStatus: data.jobAnalysis.verdict.status,
+      identityConfidence: data.companyResearch.identity_confidence,
+    };
+
+    setRecentChecks((prev) => {
+      const filtered = prev.filter((p) => p.companyName.toLowerCase() !== newEntry.companyName.toLowerCase());
+      const updated = [newEntry, ...filtered].slice(0, 10);
+      try {
+        localStorage.setItem(RECENT_CHECKS_KEY, JSON.stringify(updated));
+      } catch {
+        // Storage quota safeguard
+      }
+      return updated;
+    });
+  };
+
+  const handleClearHistory = () => {
+    try {
+      localStorage.removeItem(RECENT_CHECKS_KEY);
+      setRecentChecks([]);
+    } catch {
+      // ignore
+    }
+  };
 
   const handleAnalyze = async (payload: {
     text: string;
@@ -166,6 +217,7 @@ export default function App() {
 
       const data: AnalyzeResponse = await response.json();
       setAnalysisResult(data);
+      saveRecentCheck(data);
 
       // Smooth scroll down to results
       setTimeout(() => {
@@ -193,27 +245,40 @@ export default function App() {
           <div className="space-y-2 max-w-2xl">
             <div className="flex items-center space-x-2 text-cyan-400 text-xs font-bold uppercase tracking-wider">
               <ShieldCheck className="w-4 h-4" />
-              <span>Independent Candidate Safeguard</span>
+              <span>Job Scam & Employer Verification Platform</span>
             </div>
             <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight font-sans">
-              Verify Before You Respond or Pay.
+              Verify Before You Apply, Respond, or Pay.
             </h2>
             <p className="text-slate-300 text-sm leading-relaxed">
-              JobShield autonomously gathers live web evidence across corporate registries, official websites, and LinkedIn to distinguish legitimate employers from sophisticated employment scams, phishing, and fake recruiter impersonation.
+              JobShield protects college students, internship seekers, and freshers. Paste any suspicious job posting, recruiter message, or screenshot to verify employer authenticity, detect fee traps, inspect application channels, and receive actionable guidance.
             </p>
           </div>
 
           <div className="flex flex-col sm:flex-row gap-2 shrink-0 text-xs text-slate-300">
-            <div className="px-3.5 py-2 rounded-xl bg-slate-800/80 border border-slate-700/80">
-              <span className="block font-bold text-white">01. Autonomous Web Evidence</span>
-              <span>Scrapes & verifies real company footprint</span>
+            <div className="px-3.5 py-2.5 rounded-xl bg-slate-800/80 border border-slate-700/80">
+              <span className="block font-bold text-white">01. Autonomous Research</span>
+              <span>Web, LinkedIn, MCA & ATS verified</span>
             </div>
-            <div className="px-3.5 py-2 rounded-xl bg-slate-800/80 border border-slate-700/80">
-              <span className="block font-bold text-white">02. Explainable Risk Index</span>
-              <span>Separates Identity from Scam Score</span>
+            <div className="px-3.5 py-2.5 rounded-xl bg-slate-800/80 border border-slate-700/80">
+              <span className="block font-bold text-white">02. "Should I Apply?"</span>
+              <span>10-second student verdict & checklist</span>
             </div>
           </div>
         </div>
+
+        {/* Recent Checks Section (if any exist) */}
+        {recentChecks.length > 0 && (
+          <RecentChecks
+            recentChecks={recentChecks}
+            onSelect={(item) => {
+              // Scroll to results or inform
+              const resultsEl = document.getElementById('verification-results');
+              if (resultsEl) resultsEl.scrollIntoView({ behavior: 'smooth' });
+            }}
+            onClear={handleClearHistory}
+          />
+        )}
 
         {/* Input Form Section */}
         <JobInputForm
@@ -247,19 +312,31 @@ export default function App() {
               </span>
             </div>
 
-            {/* 1. Risk Score & Rationale Card */}
+            {/* 1. TOP VERDICT CARD: "Should I Apply?" 10-Second Student Scan */}
+            <ShouldIApplyVerdict
+              verdict={analysisResult.jobAnalysis.verdict}
+              riskBreakdown={analysisResult.riskBreakdown}
+              companyResearch={analysisResult.companyResearch}
+              jobAnalysis={analysisResult.jobAnalysis}
+              onOpenShare={() => setIsShareModalOpen(true)}
+            />
+
+            {/* 2. Interactive "Before You Apply" Checklist */}
+            <PreFlightChecklist checklist={analysisResult.jobAnalysis.checklist} />
+
+            {/* 3. Risk Score & Explainable "Why This Score?" Card */}
             <RiskScoreCard
               riskBreakdown={analysisResult.riskBreakdown}
               companyResearch={analysisResult.companyResearch}
             />
 
-            {/* 2. Discovered Company Profile Card */}
+            {/* 4. Discovered Company Profile Card */}
             <CompanyProfileCard company={analysisResult.companyResearch} />
 
-            {/* 3. Scam Signals & Channel Diagnostics */}
+            {/* 5. Scam Signals, Student Traps & Channel Diagnostics */}
             <ScamSignalsCard analysis={analysisResult.jobAnalysis} />
 
-            {/* 4. Autonomous Web Evidence & Sources */}
+            {/* 6. Autonomous Web Evidence & Sources */}
             <EvidenceSourcesCard
               sources={analysisResult.sources}
               diagnostics={analysisResult.searchDiagnostics}
@@ -269,6 +346,15 @@ export default function App() {
         )}
       </main>
 
+      {/* Share Report Modal */}
+      {analysisResult && (
+        <ShareReportModal
+          isOpen={isShareModalOpen}
+          onClose={() => setIsShareModalOpen(false)}
+          result={analysisResult}
+        />
+      )}
+
       {/* Footer */}
       <footer className="bg-white border-t border-slate-200 mt-12 py-6 text-center text-xs text-slate-500">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
@@ -276,7 +362,7 @@ export default function App() {
             JobShield.ai &bull; Autonomous Employer Verification & Scam Detection Engine
           </p>
           <p className="text-[11px] text-slate-400">
-            Rule of thumb: Legitimate employers never demand upfront fees or deposits from job applicants.
+            Rule of thumb: Legitimate employers never demand upfront fees, training deposits, or OTPs from candidates.
           </p>
         </div>
       </footer>

@@ -7,7 +7,9 @@ import {
   Info,
   Building,
   Lock,
-  ArrowUpRight,
+  CheckCircle2,
+  AlertOctagon,
+  HelpCircle,
 } from 'lucide-react';
 import { RiskBreakdown, CompanyResearchResult } from '../types';
 
@@ -29,6 +31,7 @@ export const RiskScoreCard: React.FC<RiskScoreCardProps> = ({
     impersonationRisk,
     rationale,
     recommendations,
+    whyThisScore,
   } = riskBreakdown;
 
   const identityConfidence = companyResearch.identity_confidence;
@@ -119,7 +122,7 @@ export const RiskScoreCard: React.FC<RiskScoreCardProps> = ({
             </div>
           </div>
 
-          {/* Separate Employer Identity Confidence (Section 14 Mandate) */}
+          {/* Separate Employer Identity Confidence */}
           <div className="bg-white/80 backdrop-blur-sm rounded-xl p-4 border border-slate-200/90 flex items-center space-x-4 min-w-[260px]">
             <div className="w-12 h-12 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center shrink-0">
               <Building className="w-6 h-6 text-blue-600" />
@@ -237,13 +240,87 @@ export const RiskScoreCard: React.FC<RiskScoreCardProps> = ({
         </div>
       </div>
 
+      {/* WHY THIS SCORE? Transparent Evidence Trace */}
+      {whyThisScore && (
+        <div className="p-6 border-b border-slate-100 bg-slate-50/50">
+          <div className="flex items-center space-x-2 mb-4">
+            <HelpCircle className="w-4 h-4 text-blue-600" />
+            <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+              "Why This Score?" Transparent Evidence Trace
+            </h4>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Positive Safeguards */}
+            <div className="bg-white rounded-xl p-4 border border-emerald-200/80 shadow-2xs">
+              <div className="flex items-center space-x-2 text-emerald-800 text-xs font-bold mb-3">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                <span>Verified Safeguards ({whyThisScore.positives.length})</span>
+              </div>
+              {whyThisScore.positives.length > 0 ? (
+                <ul className="space-y-2.5">
+                  {whyThisScore.positives.map((p, i) => (
+                    <li key={i} className="text-xs text-slate-700">
+                      <span className="font-bold text-emerald-950 block">{p.point}</span>
+                      <span className="text-[11px] text-slate-500 leading-tight">{p.evidence}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-xs text-slate-400 italic">No verified positive safeguards found.</p>
+              )}
+            </div>
+
+            {/* Warning Indicators */}
+            <div className="bg-white rounded-xl p-4 border border-amber-200/80 shadow-2xs">
+              <div className="flex items-center space-x-2 text-amber-800 text-xs font-bold mb-3">
+                <AlertTriangle className="w-4 h-4 text-amber-600" />
+                <span>Caution Indicators ({whyThisScore.warnings.length})</span>
+              </div>
+              {whyThisScore.warnings.length > 0 ? (
+                <ul className="space-y-2.5">
+                  {whyThisScore.warnings.map((w, i) => (
+                    <li key={i} className="text-xs text-slate-700">
+                      <span className="font-bold text-amber-950 block">{w.point}</span>
+                      <span className="text-[11px] text-slate-500 leading-tight">{w.evidence}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-xs text-slate-400 italic">No secondary warnings identified.</p>
+              )}
+            </div>
+
+            {/* Critical Hazards */}
+            <div className="bg-white rounded-xl p-4 border border-rose-200/80 shadow-2xs">
+              <div className="flex items-center space-x-2 text-rose-800 text-xs font-bold mb-3">
+                <AlertOctagon className="w-4 h-4 text-rose-600" />
+                <span>Critical Hazards ({whyThisScore.hazards.length})</span>
+              </div>
+              {whyThisScore.hazards.length > 0 ? (
+                <ul className="space-y-2.5">
+                  {whyThisScore.hazards.map((h, i) => (
+                    <li key={i} className="text-xs text-rose-900">
+                      <span className="font-bold text-rose-950 block">{h.point}</span>
+                      <span className="text-[11px] text-rose-700 leading-tight">{h.evidence}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-xs text-slate-400 italic">No critical extortion or task traps detected.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Rationale & Recommendations */}
       <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6 bg-white">
         {/* Rationale */}
         <div>
           <h4 className="text-xs font-semibold text-slate-700 uppercase tracking-wider mb-3 flex items-center gap-1.5">
             <Info className="w-4 h-4 text-blue-600" />
-            Transparent Risk Rationale
+            Evaluation Rationale
           </h4>
           <ul className="space-y-2">
             {rationale.map((item, idx) => (

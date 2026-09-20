@@ -60,10 +60,54 @@ export interface CompanyResearchResult {
   };
 }
 
+export interface VerdictInfo {
+  status: 'SAFE_TO_APPLY' | 'PROCEED_WITH_CAUTION' | 'DO_NOT_APPLY';
+  title: string;
+  summary: string;
+  actionGuidance: string;
+  badges: { label: string; type: 'success' | 'warning' | 'danger' | 'info' }[];
+}
+
+export interface PreFlightChecklistItem {
+  id: string;
+  title: string;
+  description: string;
+  category: 'employer' | 'payment' | 'channel' | 'documents' | 'careers_page';
+  status: 'passed' | 'warning' | 'critical' | 'action_required';
+  advice: string;
+}
+
+export interface DetectedUrl {
+  url: string;
+  domain: string;
+  type: 'ats' | 'official_site' | 'unbranded_form' | 'messaging' | 'suspicious' | 'other';
+  isSafe: boolean;
+  platformName?: string;
+  warning?: string;
+}
+
+export interface InternshipRiskAssessment {
+  isPayToIntern: boolean;
+  isUnrealisticStipend: boolean;
+  isTaskScamPattern: boolean;
+  isCertificateTrap: boolean;
+  notes: string[];
+}
+
 export interface JobPostingAnalysis {
   detectedJobTitle?: string;
   detectedCompensation?: string;
   isCompensationSuspicious?: boolean;
+  verdict: VerdictInfo;
+  checklist: PreFlightChecklistItem[];
+  detectedUrls: DetectedUrl[];
+  internshipAssessment: InternshipRiskAssessment;
+  careersPageMatch?: {
+    checked: boolean;
+    found: boolean;
+    url?: string;
+    note: string;
+  };
   paymentRequests: {
     detected: boolean;
     feeType?: string;
@@ -77,6 +121,7 @@ export interface JobPostingAnalysis {
   sensitiveDataRequests: {
     detected: boolean;
     items: string[];
+    riskExplanation?: string;
   };
   recruitmentChannel: {
     type:
@@ -96,6 +141,7 @@ export interface JobPostingAnalysis {
     emailType?: 'corporate' | 'free_mail' | 'suspicious' | 'unknown';
     phone?: string;
     messagingHandle?: string;
+    profileUrl?: string;
   };
   applicationUrl?: string;
   domainMismatch: {
@@ -119,6 +165,11 @@ export interface RiskBreakdown {
   impersonationRisk: number; // 0 - 100
   rationale: string[];
   recommendations: string[];
+  whyThisScore: {
+    positives: { point: string; evidence: string }[];
+    warnings: { point: string; evidence: string }[];
+    hazards: { point: string; evidence: string }[];
+  };
 }
 
 export interface SourceEvidence {
@@ -158,4 +209,15 @@ export interface TestCase {
   badge: string;
   description: string;
   text: string;
+}
+
+export interface RecentVerification {
+  id: string;
+  timestamp: string;
+  companyName: string;
+  jobTitle?: string;
+  overallRiskScore: number;
+  riskLevel: 'LOW RISK' | 'MODERATE RISK' | 'HIGH RISK' | 'VERY HIGH RISK';
+  verdictStatus: 'SAFE_TO_APPLY' | 'PROCEED_WITH_CAUTION' | 'DO_NOT_APPLY';
+  identityConfidence: number;
 }

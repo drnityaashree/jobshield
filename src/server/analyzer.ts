@@ -2,8 +2,12 @@ import { GoogleGenAI } from '@google/genai';
 import { CompanySearchEngine } from './search/searchEngine.js';
 import {
   AnalyzeResponse,
+  DetectedUrl,
+  InternshipRiskAssessment,
   JobPostingAnalysis,
+  PreFlightChecklistItem,
   RiskBreakdown,
+  VerdictInfo,
 } from './types.js';
 
 const KNOWN_ATS_DOMAINS = [
@@ -17,15 +21,30 @@ const KNOWN_ATS_DOMAINS = [
   { name: 'BambooHR', match: 'bamboohr.com' },
   { name: 'Workable', match: 'workable.com' },
   { name: 'Zoho Recruit', match: 'zohorecruit.com' },
+  { name: 'Keka', match: 'keka.com' },
+  { name: 'Freshteam', match: 'freshteam.com' },
+  { name: 'Darwinbox', match: 'darwinbox.com' },
+  { name: 'Cutshort', match: 'cutshort.io' },
+  { name: 'Instahyre', match: 'instahyre.com' },
+  { name: 'Wellfound', match: 'wellfound.com' },
+  { name: 'AngelList', match: 'angel.co' },
   { name: 'Internshala', match: 'internshala.com' },
+  { name: 'Unstop', match: 'unstop.com' },
   { name: 'Naukri', match: 'naukri.com' },
   { name: 'Indeed', match: 'indeed.com' },
+  { name: 'Hirist', match: 'hirist.tech' },
+  { name: 'Hirist', match: 'hirist.com' },
+  { name: 'RippleMatch', match: 'ripplematch.com' },
+  { name: 'Handshake', match: 'joinhandshake.com' },
+  { name: 'Taleo', match: 'taleo.net' },
+  { name: 'SuccessFactors', match: 'successfactors.com' },
   { name: 'LinkedIn Jobs', match: 'linkedin.com/jobs' },
 ];
 
 const FREE_EMAIL_DOMAINS = new Set([
   'gmail.com',
   'yahoo.com',
+  'yahoo.in',
   'hotmail.com',
   'outlook.com',
   'rediffmail.com',
@@ -33,9 +52,11 @@ const FREE_EMAIL_DOMAINS = new Set([
   'protonmail.com',
   'mail.com',
   'aol.com',
+  'zoho.com',
+  'icloud.com',
 ]);
 
-const SUSPICIOUS_TLDS = ['.xyz', '.top', '.info', '.work', '.click', '.buzz', '.fit', '.cfd', '.quest'];
+const SUSPICIOUS_TLDS = ['.xyz', '.top', '.info', '.work', '.click', '.buzz', '.fit', '.cfd', '.quest', '.gq', '.ml', '.tk', '.ga', '.cf'];
 
 export class JobShieldAnalyzer {
   private ai: GoogleGenAI | null = null;
@@ -77,7 +98,7 @@ export class JobShieldAnalyzer {
             parts: [
               imagePart,
               {
-                text: 'Perform high-precision OCR on this job posting or offer screenshot. Transcribe all text accurately, including employer header, recruiter contacts, links, job description, and salary details.',
+                text: 'Perform high-precision OCR on this job posting or offer screenshot. Transcribe all text accurately, including employer header, recruiter contacts, links, job description, stipend/salary details, and any document/payment requests.',
               },
             ],
           },
@@ -98,50 +119,45 @@ export class JobShieldAnalyzer {
 
     // Rule-based extraction patterns
     const patterns = [
-      /(?:at|for|by|with)\s+([A-Z][A-Za-z0-9\s.&'-]{2,35}?)(?:\s+is\s+hiring|\s+hiring|\s+is\s+looking|\s+Pvt|\s+Technologies|\s+Inc|\s+LLC|\s+Corporation|[,\n.])/i,
-      /(?:Employer|Company|Organization|Hiring Company):\s*([A-Za-z0-9\s.&'-]{2,40})/i,
-      /Welcome to\s+([A-Za-z0-9\s.&'-]{2,30})/i,
-      /^([A-Z][A-Za-z0-9.&'-]+(?:\s+[A-Z][A-Za-z0-9.&'-]+){0,3})\s+(?:is hiring|hiring for)/im,
+      /(?:at|for|with|company:?|employer:?|organization:?)\s+([A-Z][A-Za-z0-9&.\s]{2,30})(?:\s+(?:is hiring|seeks|is looking|careers|pvt|ltd|inc|corp))/i,
+      /(?:^|\n)\s*(?:Company|Organization|Hiring Firm):\s*([A-Z][A-Za-z0-9&.\s]{2,30})/i,
+      /(?:join the team at|career at|working at)\s+([A-Z][A-Za-z0-9&.\s]{2,30})/i,
     ];
 
-    for (const pat of patterns) {
-      const m = fullText.match(pat);
-      if (m && m[1]) {
-        const candidate = m[1].trim();
-        if (
-          candidate.length > 2 &&
-          !/^(Software|Frontend|Backend|Data|Intern|Engineer|Manager|Remote|Full|Part|Immediate|Looking|Apply|Job|Position)$/i.test(
-            candidate
-          )
-        ) {
-          detectedCompany = candidate;
-          confidence = 85;
-          break;
-        }
+    for (const pattern of patterns) {
+      const match = fullText.match(pattern);
+      if (match && match[1]) {
+        detectedCompany = match[1].trim();
+        confidence = 80;
+        break;
       }
     }
 
-    // If LLM available, verify or refine company extraction
-    if (this.ai && fullText.length > 20) {
+    // If still not detected and Gemini is available, use fast entity extraction
+    if (!detectedCompany && fullText.length > 20 && this.ai) {
       try {
-        const prompt = `Analyze this job posting and extract ONLY the hiring company or employer name.
-If unclear, reply with the most likely employer or "Unknown".
-Do not include extra words.
+        const extractPrompt = `Identify the hiring company name mentioned in this job posting or message.
+Return ONLY a JSON object with:
+{"company": "Extracted Company Name or empty string", "confidence": number between 0 and 100}
+
 Text:
 ${fullText.slice(0, 1500)}`;
 
-        const response = await this.ai.models.generateContent({
+        const res = await this.ai.models.generateContent({
           model: 'gemini-3.1-flash-lite',
-          contents: prompt,
+          contents: extractPrompt,
+          config: {
+            responseMimeType: 'application/json',
+          },
         });
 
-        const extracted = response.text?.trim().replace(/^["']|["']$/g, '');
-        if (extracted && extracted !== 'Unknown' && extracted.length < 50) {
-          detectedCompany = extracted;
-          confidence = 90;
+        const parsed = JSON.parse(res.text || '{}');
+        if (parsed.company && parsed.company.trim().length > 1) {
+          detectedCompany = parsed.company.trim();
+          confidence = parsed.confidence || 75;
         }
       } catch {
-        // preserve regex candidate
+        // Fall back gracefully
       }
     }
 
@@ -153,7 +169,8 @@ ${fullText.slice(0, 1500)}`;
   }
 
   /**
-   * Analyzes job posting text for scam signals, recruitment channels, and recruiter attributes.
+   * Evaluates text for scam indicators, payment requests, ATS platforms, sensitive credentials,
+   * student/internship traps, and generates an explainable verdict & pre-flight checklist.
    */
   public analyzeJobSignals(
     text: string,
@@ -161,60 +178,164 @@ ${fullText.slice(0, 1500)}`;
   ): JobPostingAnalysis {
     const lower = text.toLowerCase();
 
-    // 1. Payment Requests (Critical Risk)
+    // 1. Payment Requests Detection (Zero-Tolerance)
+    const paymentPatterns = [
+      { regex: /registration\s+fee/i, type: 'Registration Fee', severity: 'critical' as const },
+      { regex: /security\s+deposit/i, type: 'Security Deposit', severity: 'critical' as const },
+      { regex: /refundable\s+(?:deposit|amount|caution\s+money)/i, type: 'Refundable Caution Deposit', severity: 'critical' as const },
+      { regex: /training\s+fee|pay\s+for\s+training|training\s+charges/i, type: 'Training Fee / Pay-to-Train', severity: 'critical' as const },
+      { regex: /equipment\s+(?:fee|deposit|charge|insurance)|laptop\s+deposit|courier\s+charge/i, type: 'Equipment / Laptop Courier Deposit', severity: 'critical' as const },
+      { regex: /document\s+verification\s+fee|processing\s+fee|application\s+fee/i, type: 'Document Verification / Processing Fee', severity: 'critical' as const },
+      { regex: /pay\s+(?:inr|rs\.?|₹|\$)\s*\d+/i, type: 'Direct Payment Demand', severity: 'critical' as const },
+      { regex: /send\s+(?:money|payment|crypto|usdt|upi)/i, type: 'Payment Transaction Demand', severity: 'critical' as const },
+    ];
+
     let paymentDetected = false;
     let feeType: string | undefined;
     let paymentDetails: string | undefined;
     let paymentSeverity: 'none' | 'low' | 'medium' | 'high' | 'critical' = 'none';
 
-    const paymentRegexes = [
-      { regex: /(registration|processing|application)\s+fee/i, type: 'Registration / Processing Fee' },
-      { regex: /security\s+deposit/i, type: 'Refundable Security Deposit' },
-      { regex: /(training|laptop|equipment|material)\s+(fee|cost|charge|deposit)/i, type: 'Training / Equipment Fee' },
-      { regex: /pay\s+(?:rs\.?|inr|₹|\$)\s*(\d+)/i, type: 'Upfront Payment Request' },
-      { regex: /(document|verification)\s+charges?/i, type: 'Document Verification Charge' },
-    ];
-
-    for (const pr of paymentRegexes) {
-      const match = text.match(pr.regex);
-      if (match) {
+    for (const p of paymentPatterns) {
+      if (p.regex.test(text)) {
         paymentDetected = true;
-        feeType = pr.type;
-        paymentDetails = `Job posting requests a ${pr.type} (${match[0]}). Legitimate employers never charge candidates.`;
-        paymentSeverity = 'critical';
+        feeType = p.type;
+        paymentSeverity = p.severity;
+        paymentDetails = `Flagged "${p.type}". Legitimate companies NEVER request money, deposits, or kit fees from job seekers or interns.`;
         break;
       }
     }
 
-    // 2. Urgency signals
-    let urgencyDetected = false;
-    let urgencyDetails: string | undefined;
+    // 2. Student / Internship Trap Analysis
+    const isPayToIntern = /pay\s+to\s+intern|paid\s+internship\s+fee|internship\s+certificate\s+charge|pay\s+for\s+certificate/i.test(text) ||
+      (lower.includes('intern') && paymentDetected);
+
+    const isTaskScamPattern = /(?:like|subscribe|review)\s+(?:youtube|telegram|google\s+maps|hotel)|daily\s+profit|usdt\s+task|earn\s+₹?\d{3,5}\s+per\s+day|task\s+completion\s+commission/i.test(text);
+
+    const isCertificateTrap = /experience\s+letter\s+(?:fee|charges|cost)|certificate\s+only\s+internship|guaranteed\s+placement\s+after\s+unpaid/i.test(text);
+
+    // 3. Urgency & High-Pressure Tactics
     const urgencyPatterns = [
-      /apply\s+within\s+(?:\d+\s+hours?|30\s+mins?|today)/i,
-      /limited\s+(?:seats|slots|vacancies)\s+(?:left|available)/i,
-      /immediate\s+(?:joining|selection|offer)/i,
-      /hiring\s+urgently|urgent\s+requirement/i,
+      /immediate\s+joining\s+only/i,
+      /limited\s+(?:seats|vacancies|slots)\s+available/i,
+      /apply\s+within\s+(?:24|12|2|1)\s+(?:hours?|hrs?)/i,
+      /direct\s+selection\s+(?:without|no)\s+interview/i,
+      /spot\s+offer/i,
+      /urgent\s+hiring\s+hurry/i,
     ];
 
+    let urgencyDetected = false;
+    let urgencyDetails: string | undefined;
     for (const up of urgencyPatterns) {
       const match = text.match(up);
       if (match) {
         urgencyDetected = true;
-        urgencyDetails = `High-pressure urgency tactic detected ("${match[0]}"). Scammers use false scarcity to rush applicants.`;
+        urgencyDetails = `High-pressure urgency tactic detected ("${match[0]}"). Scammers use false urgency to bypass candidate diligence.`;
         break;
       }
     }
 
-    // 3. Sensitive Data Requests
+    // 4. Sensitive Data Requests (Identity & Banking)
     const sensitiveItems: string[] = [];
     if (/otp|one\s*time\s*password/i.test(text)) sensitiveItems.push('OTP / Authentication Code');
-    if (/bank\s+account\s+details|account\s+number|upi\s+id/i.test(text)) sensitiveItems.push('Bank Account / UPI Details');
-    if (/aadhaar|pan\s+card|social\s+security|ssn/i.test(text)) sensitiveItems.push('National ID / Aadhaar / PAN');
-    if (/credit\s+card|debit\s+card|cvv/i.test(text)) sensitiveItems.push('Credit / Debit Card credentials');
+    if (/bank\s+account\s+details|account\s+number|ifsc|cancelled\s+cheque|upi\s+pin/i.test(text)) sensitiveItems.push('Bank Account / UPI Credentials');
+    if (/aadhaar|pan\s+card|social\s+security|ssn|passport\s+copy/i.test(text)) sensitiveItems.push('National ID (Aadhaar / PAN / SSN)');
+    if (/credit\s+card|debit\s+card|cvv|atm\s+pin/i.test(text)) sensitiveItems.push('Credit / Debit Card Credentials');
 
-    // 4. Recruitment Channel & Email
-    let channelType: 'official_ats' | 'company_domain' | 'public_email' | 'messaging_app' | 'suspicious_form' | 'unknown' =
-      'unknown';
+    const riskExplanation = sensitiveItems.length > 0
+      ? `Premature collection of sensitive credentials (${sensitiveItems.join(', ')}). In legitimate corporate hiring, identity and banking documents are only requested AFTER a formal written offer letter is accepted.`
+      : undefined;
+
+    // 5. Comprehensive URL Extraction & Classification
+    const allRawUrls = text.match(/https?:\/\/[^\s<>"]+/gi) || [];
+    const detectedUrls: DetectedUrl[] = [];
+
+    for (const rawUrl of allRawUrls) {
+      try {
+        const parsed = new URL(rawUrl);
+        const domain = parsed.hostname.replace(/^www\./, '').toLowerCase();
+
+        // Check ATS
+        const matchingAts = KNOWN_ATS_DOMAINS.find((ats) => domain.includes(ats.match));
+        if (matchingAts) {
+          detectedUrls.push({
+            url: rawUrl,
+            domain,
+            type: 'ats',
+            isSafe: true,
+            platformName: matchingAts.name,
+          });
+          continue;
+        }
+
+        // Check Forms
+        if (domain.includes('forms.gle') || domain.includes('docs.google.com') || domain.includes('typeform.com') || domain.includes('tally.so')) {
+          detectedUrls.push({
+            url: rawUrl,
+            domain,
+            type: 'unbranded_form',
+            isSafe: false,
+            platformName: 'Unbranded Intake Form',
+            warning: 'Unauthenticated public form. Easy for impersonators to harvest candidate resumes.',
+          });
+          continue;
+        }
+
+        // Check Messaging Apps
+        if (domain.includes('t.me') || domain.includes('wa.me') || domain.includes('whatsapp.com')) {
+          detectedUrls.push({
+            url: rawUrl,
+            domain,
+            type: 'messaging',
+            isSafe: false,
+            platformName: domain.includes('t.me') ? 'Telegram' : 'WhatsApp',
+            warning: 'Messaging app channel. Major vector for task scams and untraceable communications.',
+          });
+          continue;
+        }
+
+        // Check Suspicious TLD or Shorteners
+        const isSuspiciousTld = SUSPICIOUS_TLDS.some((tld) => domain.endsWith(tld));
+        const isShortener = ['bit.ly', 'tinyurl.com', 'is.gd', 'cutt.ly', 'rb.gy'].includes(domain);
+
+        if (isSuspiciousTld || isShortener) {
+          detectedUrls.push({
+            url: rawUrl,
+            domain,
+            type: 'suspicious',
+            isSafe: false,
+            platformName: isShortener ? 'URL Shortener' : 'Untrusted TLD Domain',
+            warning: isShortener ? 'Masked destination URL.' : `Domain uses high-risk TLD (${domain}).`,
+          });
+          continue;
+        }
+
+        // Official Domain check
+        const cleanOfficial = officialCompanyDomain?.replace(/^www\./, '').toLowerCase();
+        if (cleanOfficial && (domain === cleanOfficial || domain.endsWith('.' + cleanOfficial))) {
+          detectedUrls.push({
+            url: rawUrl,
+            domain,
+            type: 'official_site',
+            isSafe: true,
+            platformName: 'Company Official Domain',
+          });
+          continue;
+        }
+
+        // Other domain
+        detectedUrls.push({
+          url: rawUrl,
+          domain,
+          type: 'other',
+          isSafe: true,
+        });
+      } catch {
+        // invalid URL skip
+      }
+    }
+
+    // 6. Recruitment Channel & Email Detection
+    let channelType: 'official_ats' | 'company_domain' | 'public_email' | 'messaging_app' | 'suspicious_form' | 'unknown' = 'unknown';
     let channelName = 'Standard portal';
     let channelDetails = 'No direct external application link identified.';
     let isHighRiskChannel = false;
@@ -231,7 +352,7 @@ ${fullText.slice(0, 1500)}`;
       }
     }
 
-    // Check for Messaging Apps
+    // Check Messaging Apps & Forms if not ATS
     if (!detectedAts) {
       if (lower.includes('telegram') || /t\.me\/[a-zA-Z0-9_]+/i.test(text)) {
         channelType = 'messaging_app';
@@ -243,10 +364,10 @@ ${fullText.slice(0, 1500)}`;
         channelName = 'WhatsApp Recruitment';
         channelDetails = 'Recruitment directed through WhatsApp rather than official company hiring portals.';
         isHighRiskChannel = true;
-      } else if (lower.includes('forms.gle') || lower.includes('docs.google.com/forms')) {
+      } else if (lower.includes('forms.gle') || lower.includes('docs.google.com/forms') || lower.includes('tally.so')) {
         channelType = 'suspicious_form';
-        channelName = 'Google Forms Intake';
-        channelDetails = 'Unbranded Google Form used to harvest candidate details without corporate authentication.';
+        channelName = 'Unbranded Form Intake';
+        channelDetails = 'Unbranded public form used to harvest candidate details without corporate authentication.';
         isHighRiskChannel = true;
       }
     }
@@ -284,36 +405,26 @@ ${fullText.slice(0, 1500)}`;
       }
     }
 
-    // 5. Application URL and Domain Mismatch
-    const urlMatches = text.match(/https?:\/\/[^\s<>"]+/gi) || [];
-    let applicationUrl: string | undefined;
-    let jobDomain: string | undefined;
+    // 7. Domain Mismatch Calculation
+    const applicationUrl = detectedUrls.length > 0 ? detectedUrls[0].url : undefined;
+    let jobDomain: string | undefined = detectedUrls.length > 0 ? detectedUrls[0].domain : undefined;
     let domainMismatchDetected = false;
     let mismatchExplanation: string | undefined;
 
-    if (urlMatches.length > 0 && urlMatches[0]) {
-      applicationUrl = urlMatches[0];
-      try {
-        jobDomain = new URL(applicationUrl).hostname.replace(/^www\./, '');
-      } catch {
-        jobDomain = undefined;
-      }
+    if (jobDomain && officialCompanyDomain) {
+      const cleanOfficial = officialCompanyDomain.replace(/^www\./, '').toLowerCase();
+      const isOfficialSubdomain = jobDomain === cleanOfficial || jobDomain.endsWith('.' + cleanOfficial);
+      const isKnownAts = KNOWN_ATS_DOMAINS.some((a) => jobDomain?.includes(a.match));
 
-      if (jobDomain && officialCompanyDomain) {
-        const cleanOfficial = officialCompanyDomain.replace(/^www\./, '').toLowerCase();
-        const isOfficialSubdomain = jobDomain.endsWith(cleanOfficial);
-        const isKnownAts = KNOWN_ATS_DOMAINS.some((a) => jobDomain?.includes(a.match));
-
-        if (!isOfficialSubdomain && !isKnownAts) {
-          domainMismatchDetected = true;
-          mismatchExplanation = `Application destination (${jobDomain}) does not match employer official domain (${cleanOfficial}) or known ATS portals.`;
-        }
+      if (!isOfficialSubdomain && !isKnownAts) {
+        domainMismatchDetected = true;
+        mismatchExplanation = `Application destination (${jobDomain}) diverges from the employer's authenticated domain (${cleanOfficial}) and recognized ATS portals.`;
       }
     }
 
-    // 6. Compensation analysis
+    // 8. Compensation analysis & Stipend Sanity Check
     const salaryMatch = text.match(
-      /(?:₹|rs\.?|inr|\$)\s*(\d+(?:,\d+)*(?:\s*(?:k|lakhs?|lac|per\s+month|\/mo|\/month|lpa))?)/i
+      /(?:₹|rs\.?|inr|\$)\s*(\d+(?:,\d+)*(?:\s*(?:k|lakhs?|lac|per\s+month|\/mo|\/month|lpa|per\s+day|\/day))?)/i
     );
     let detectedSalary: string | undefined;
     let isSalarySuspicious = false;
@@ -322,38 +433,52 @@ ${fullText.slice(0, 1500)}`;
       detectedSalary = salaryMatch[0];
       // Check for absurd rates for beginner / entry roles
       if (
-        (lower.includes('intern') || lower.includes('data entry') || lower.includes('typing')) &&
-        (lower.includes('80,000') || lower.includes('1,00,000') || lower.includes('50000/month') || lower.includes('60,000/month'))
+        (lower.includes('intern') || lower.includes('data entry') || lower.includes('typing') || lower.includes('copy paste')) &&
+        (lower.includes('80,000') || lower.includes('1,00,000') || lower.includes('50000/month') || lower.includes('60,000/month') || lower.includes('5,000/day') || lower.includes('3000/day'))
       ) {
         isSalarySuspicious = true;
       }
     }
 
-    // Compile positive and warning signals
+    const internshipNotes: string[] = [];
+    if (isPayToIntern) internshipNotes.push('Pay-to-intern or paid certificate trap detected.');
+    if (isSalarySuspicious) internshipNotes.push(`Unrealistic stipend (${detectedSalary}) for an entry-level / intern role.`);
+    if (isTaskScamPattern) internshipNotes.push('Task fraud indicators detected (e.g. video like / hotel review commission).');
+    if (isCertificateTrap) internshipNotes.push('Offer promotes paid certificates rather than genuine career experience.');
+
+    const internshipAssessment: InternshipRiskAssessment = {
+      isPayToIntern,
+      isUnrealisticStipend: isSalarySuspicious,
+      isTaskScamPattern,
+      isCertificateTrap,
+      notes: internshipNotes,
+    };
+
+    // 9. Positive and Warning Signals Collection
     const positiveSignals: string[] = [];
     const warningSignals: string[] = [];
     const criticalFlags: string[] = [];
 
     if (!paymentDetected) {
-      positiveSignals.push('No upfront monetary deposit or registration fee requested.');
+      positiveSignals.push('Zero upfront monetary deposit, registration fee, or training charge requested.');
     } else {
       criticalFlags.push(paymentDetails || 'Upfront payment requested.');
     }
 
     if (detectedAts) {
-      positiveSignals.push(`Application processed via certified ATS (${detectedAts}).`);
+      positiveSignals.push(`Application submitted via certified Applicant Tracking System (${detectedAts}).`);
     }
 
     if (emailType === 'corporate') {
-      positiveSignals.push(`Recruiter utilizes authenticated enterprise email domain (@${emailDomain}).`);
+      positiveSignals.push(`Recruiter communicates from an authenticated corporate email domain (@${emailDomain}).`);
     } else if (emailType === 'free_mail') {
       warningSignals.push(
-        `Recruiter utilizes a free webmail service (@${emailDomain}). Does not independently authenticate employer affiliation.`
+        `Recruiter uses personal webmail (@${emailDomain}). Cannot independently verify corporate employment.`
       );
     }
 
     if (isHighRiskChannel) {
-      warningSignals.push(`High-risk communication platform used (${channelName}).`);
+      warningSignals.push(`High-risk communication platform utilized (${channelName}).`);
     }
 
     if (urgencyDetected) {
@@ -361,7 +486,7 @@ ${fullText.slice(0, 1500)}`;
     }
 
     if (sensitiveItems.length > 0) {
-      criticalFlags.push(`Premature collection of sensitive credentials: ${sensitiveItems.join(', ')}.`);
+      criticalFlags.push(`Premature request for sensitive credentials: ${sensitiveItems.join(', ')}.`);
     }
 
     if (domainMismatchDetected) {
@@ -370,8 +495,12 @@ ${fullText.slice(0, 1500)}`;
 
     if (isSalarySuspicious) {
       warningSignals.push(
-        `Compensation (${detectedSalary}) is unusually elevated for the stated role qualifications.`
+        `Compensation (${detectedSalary}) is suspiciously inflated for the stated entry qualifications.`
       );
+    }
+
+    if (isTaskScamPattern) {
+      criticalFlags.push('Task-based commission scam pattern identified (review/like task trap).');
     }
 
     // Extract Job Title
@@ -380,10 +509,35 @@ ${fullText.slice(0, 1500)}`;
     );
     const detectedJobTitle = titleMatch ? titleMatch[1].trim() : undefined;
 
+    // Construct Temporary Verdict & Checklist (Refined in calculateRiskScore)
+    const initialVerdict: VerdictInfo = {
+      status: paymentDetected || isTaskScamPattern ? 'DO_NOT_APPLY' : 'PROCEED_WITH_CAUTION',
+      title: paymentDetected ? 'DO NOT APPLY: Immediate Financial Hazard' : 'PROCEED WITH CAUTION: Verify First',
+      summary: paymentDetected
+        ? 'This posting demands upfront money or deposits. Legitimate employers never charge candidates.'
+        : 'Review employer credentials and careers page before submitting personal documents.',
+      actionGuidance: paymentDetected
+        ? 'Do not transfer any funds or share banking details. Block the sender.'
+        : 'Verify the vacancy on the official company careers portal.',
+      badges: [],
+    };
+
     return {
       detectedJobTitle,
       detectedCompensation: detectedSalary,
       isCompensationSuspicious: isSalarySuspicious,
+      verdict: initialVerdict,
+      checklist: [],
+      detectedUrls,
+      internshipAssessment,
+      careersPageMatch: {
+        checked: true,
+        found: !!detectedAts,
+        url: detectedAts ? applicationUrl : undefined,
+        note: detectedAts
+          ? `Corroborated via ${detectedAts} ATS portal.`
+          : 'Direct listing on company careers portal not yet confirmed.',
+      },
       paymentRequests: {
         detected: paymentDetected,
         feeType,
@@ -397,6 +551,7 @@ ${fullText.slice(0, 1500)}`;
       sensitiveDataRequests: {
         detected: sensitiveItems.length > 0,
         items: sensitiveItems,
+        riskExplanation,
       },
       recruitmentChannel: {
         type: channelType,
@@ -425,7 +580,8 @@ ${fullText.slice(0, 1500)}`;
   }
 
   /**
-   * Transparently fuses employer authenticity with job posting risk signals into an explainable score.
+   * Transparently fuses employer authenticity with job posting risk signals into an explainable score,
+   * generates evidence-backed 'Why This Score?' points, dynamic Student Checklist, and high-impact Verdict.
    */
   public calculateRiskScore(
     identityConfidence: number,
@@ -441,6 +597,8 @@ ${fullText.slice(0, 1500)}`;
     if (jobAnalysis.sensitiveDataRequests.detected) contentRisk += 40;
     if (jobAnalysis.urgencySignals.detected) contentRisk += 15;
     if (jobAnalysis.isCompensationSuspicious) contentRisk += 20;
+    if (jobAnalysis.internshipAssessment.isTaskScamPattern) contentRisk += 50;
+    if (jobAnalysis.internshipAssessment.isPayToIntern) contentRisk += 40;
     const jobPostingContentRisk = Math.min(100, contentRisk);
 
     // 3. Recruitment Channel Risk (0 - 100)
@@ -459,15 +617,19 @@ ${fullText.slice(0, 1500)}`;
     }
     const finalImpersonationRisk = Math.min(100, impersonationRisk);
 
-    // 5. Overall Risk Score (0 - 100)
+    // 5. Overall Risk Score (0 - 100) with Hierarchical Veto Logic
     let overall: number;
 
-    // Hard rules for dangerous vectors
     if (jobAnalysis.paymentRequests.detected) {
-      // Immediate scam trigger
-      overall = Math.max(82, Math.round(jobPostingContentRisk * 0.9 + recruitmentChannelRisk * 0.1));
+      // Upfront payment is an immediate critical hazard veto
+      overall = Math.max(85, Math.round(jobPostingContentRisk * 0.9 + recruitmentChannelRisk * 0.1));
+    } else if (jobAnalysis.internshipAssessment.isTaskScamPattern) {
+      overall = Math.max(88, Math.round(jobPostingContentRisk * 0.85 + recruitmentChannelRisk * 0.15));
     } else if (jobAnalysis.sensitiveDataRequests.detected && jobAnalysis.recruitmentChannel.isHighRisk) {
       overall = Math.max(78, Math.round(jobPostingContentRisk * 0.6 + recruitmentChannelRisk * 0.4));
+    } else if (jobAnalysis.domainMismatch.detected && identityConfidence >= 70) {
+      // Impersonating an established company
+      overall = Math.max(72, Math.round(finalImpersonationRisk * 0.6 + channelRisk * 0.4));
     } else {
       // Weighted fusion
       overall = Math.round(
@@ -488,7 +650,6 @@ ${fullText.slice(0, 1500)}`;
 
     // Rationale construction
     const rationale: string[] = [];
-
     if (identityConfidence >= 75) {
       rationale.push(`Strong public digital footprint corroborates employer existence (${identityConfidence}/100 identity confidence).`);
     } else if (identityConfidence >= 45) {
@@ -500,25 +661,21 @@ ${fullText.slice(0, 1500)}`;
     if (jobAnalysis.paymentRequests.detected) {
       rationale.push('Critical warning: Posting requires upfront monetary transaction or deposit.');
     }
-
     if (jobAnalysis.domainMismatch.detected) {
       rationale.push('Application destination does not correlate with authenticated corporate domains.');
     }
-
     if (jobAnalysis.recruiterIdentity?.emailType === 'free_mail') {
       rationale.push('Recruiter uses personal webmail, which cannot independently prove corporate affiliation.');
     }
-
     if (jobAnalysis.atsIdentified) {
       rationale.push(`Authentic ATS portal utilized (${jobAnalysis.atsIdentified}).`);
     }
 
     // Actionable Recommendations
     const recommendations: string[] = [];
-
     if (overall >= 75) {
       recommendations.push('Do NOT send money or submit payment for registration, training, or equipment.');
-      recommendations.push('Do NOT provide sensitive banking credentials, OTPs, or identity cards.');
+      recommendations.push('Do NOT provide sensitive banking credentials, OTPs, or national identity cards.');
       recommendations.push('Cease communication if recruiter insists on Telegram or personal WhatsApp coordination.');
     } else if (overall >= 35) {
       recommendations.push('Independently cross-verify this specific vacancy on the company official careers portal.');
@@ -529,6 +686,175 @@ ${fullText.slice(0, 1500)}`;
       recommendations.push('As standard practice, verify offer documentation before disclosing financial documents for payroll.');
     }
 
+    // 6. Build Explainable "Why This Score?" Structure
+    const whyThisScore = {
+      positives: [] as { point: string; evidence: string }[],
+      warnings: [] as { point: string; evidence: string }[],
+      hazards: [] as { point: string; evidence: string }[],
+    };
+
+    if (identityConfidence >= 70) {
+      whyThisScore.positives.push({
+        point: 'Verified Corporate Entity',
+        evidence: `Discovered official corporate domain and validated web footprint (${identityConfidence}% confidence).`,
+      });
+    }
+
+    if (!jobAnalysis.paymentRequests.detected) {
+      whyThisScore.positives.push({
+        point: 'Zero Payment Requested',
+        evidence: 'No registration, kit fee, or caution deposit demanded in text.',
+      });
+    } else {
+      whyThisScore.hazards.push({
+        point: 'Upfront Money Demanded',
+        evidence: jobAnalysis.paymentRequests.details || 'Demands payment before hiring.',
+      });
+    }
+
+    if (jobAnalysis.atsIdentified) {
+      whyThisScore.positives.push({
+        point: 'Certified Enterprise ATS',
+        evidence: `Application is routed through ${jobAnalysis.atsIdentified}.`,
+      });
+    }
+
+    if (jobAnalysis.recruiterIdentity?.emailType === 'corporate') {
+      whyThisScore.positives.push({
+        point: 'Authenticated Company Domain',
+        evidence: `Recruiter email matches corporate domain (${jobAnalysis.recruiterIdentity.email}).`,
+      });
+    } else if (jobAnalysis.recruiterIdentity?.emailType === 'free_mail') {
+      whyThisScore.warnings.push({
+        point: 'Unverified Personal Webmail',
+        evidence: `Recruiter uses free webmail (${jobAnalysis.recruiterIdentity.email}). Any individual can create this address.`,
+      });
+    }
+
+    if (jobAnalysis.domainMismatch.detected) {
+      whyThisScore.warnings.push({
+        point: 'Destination Domain Divergence',
+        evidence: jobAnalysis.domainMismatch.explanation || 'Application destination differs from corporate domain.',
+      });
+    }
+
+    if (jobAnalysis.recruitmentChannel.isHighRisk) {
+      whyThisScore.warnings.push({
+        point: 'High-Risk Hiring Channel',
+        evidence: jobAnalysis.recruitmentChannel.details,
+      });
+    }
+
+    if (jobAnalysis.sensitiveDataRequests.detected) {
+      whyThisScore.hazards.push({
+        point: 'Premature Credential Harvesting',
+        evidence: `Requests: ${jobAnalysis.sensitiveDataRequests.items.join(', ')}.`,
+      });
+    }
+
+    if (jobAnalysis.internshipAssessment.isTaskScamPattern) {
+      whyThisScore.hazards.push({
+        point: 'Task Fraud / Daily Commission Vector',
+        evidence: 'Solicits video review or hotel rating tasks with promise of commissions.',
+      });
+    }
+
+    // 7. Update JobAnalysis Verdict & Checklist
+    let verdictStatus: 'SAFE_TO_APPLY' | 'PROCEED_WITH_CAUTION' | 'DO_NOT_APPLY';
+    let verdictTitle: string;
+    let verdictSummary: string;
+    let verdictAction: string;
+    const badges: { label: string; type: 'success' | 'warning' | 'danger' | 'info' }[] = [];
+
+    if (overall <= 30) {
+      verdictStatus = 'SAFE_TO_APPLY';
+      verdictTitle = 'SAFE TO APPLY — Verified Standard Process';
+      verdictSummary = 'Employer identity is corroborated, legitimate recruitment channels are used, and no scam vectors were detected.';
+      verdictAction = 'Proceed with application through the certified portal or official company website.';
+      badges.push({ label: 'Verified Channel', type: 'success' });
+      badges.push({ label: '₹0 Fees', type: 'success' });
+    } else if (overall <= 65) {
+      verdictStatus = 'PROCEED_WITH_CAUTION';
+      verdictTitle = 'PROCEED WITH CAUTION — Verification Needed';
+      verdictSummary = 'Employer may have a real public profile, but this specific posting or recruiter channel has unverified flags.';
+      verdictAction = 'Check the company official careers page or contact the company through verified LinkedIn before sharing documents.';
+      badges.push({ label: 'Unverified Recruiter', type: 'warning' });
+      badges.push({ label: 'Verify On Careers Page', type: 'warning' });
+    } else {
+      verdictStatus = 'DO_NOT_APPLY';
+      verdictTitle = 'DO NOT APPLY — High-Risk Fraud Indicators';
+      verdictSummary = jobAnalysis.paymentRequests.detected
+        ? 'CRITICAL HAZARD: Immediate financial trap. Real employers NEVER demand money, deposits, or training fees from students.'
+        : 'Multiple high-risk fraud signals identified (untraceable channels, document phishing, or brand impersonation).';
+      verdictAction = 'Do NOT send money, do NOT share Aadhaar/PAN/OTP, and cease communication immediately.';
+      badges.push({ label: 'High Scam Risk', type: 'danger' });
+      if (jobAnalysis.paymentRequests.detected) badges.push({ label: 'Fee Extortion', type: 'danger' });
+    }
+
+    jobAnalysis.verdict = {
+      status: verdictStatus,
+      title: verdictTitle,
+      summary: verdictSummary,
+      actionGuidance: verdictAction,
+      badges,
+    };
+
+    // 8. Generate Student Pre-Flight Checklist
+    const checklist: PreFlightChecklistItem[] = [
+      {
+        id: 'chk-fee',
+        title: 'Zero Upfront Payment Guarantee',
+        description: 'Verify that zero rupees are requested for registration, training, laptop deposit, or processing.',
+        category: 'payment',
+        status: jobAnalysis.paymentRequests.detected ? 'critical' : 'passed',
+        advice: jobAnalysis.paymentRequests.detected
+          ? 'STOP! This job asks for money. Real companies pay you; they NEVER ask for deposits.'
+          : 'Confirmed: No payment demands detected in this posting.',
+      },
+      {
+        id: 'chk-careers',
+        title: 'Official Careers Page Cross-Check',
+        description: 'Check if this specific opening exists on the official website careers portal.',
+        category: 'careers_page',
+        status: jobAnalysis.atsIdentified ? 'passed' : 'action_required',
+        advice: jobAnalysis.atsIdentified
+          ? `Verified via recognized ATS portal (${jobAnalysis.atsIdentified}).`
+          : 'Search the company official website under /careers to ensure this opening is genuine.',
+      },
+      {
+        id: 'chk-recruiter',
+        title: 'Recruiter Domain & Identity Verification',
+        description: 'Check whether the recruiter is using an authenticated corporate email or unverified personal webmail.',
+        category: 'channel',
+        status: jobAnalysis.recruiterIdentity?.emailType === 'corporate' ? 'passed' : jobAnalysis.recruiterIdentity?.emailType === 'free_mail' ? 'warning' : 'action_required',
+        advice: jobAnalysis.recruiterIdentity?.emailType === 'corporate'
+          ? 'Passed: Recruiter uses authenticated corporate domain.'
+          : 'Caution: Recruiter uses personal webmail. Search recruiter on LinkedIn to verify employment.',
+      },
+      {
+        id: 'chk-docs',
+        title: 'Pre-Offer Document & Identity Shield',
+        description: 'Ensure you have not submitted PAN, Aadhaar, Bank Details, Cancelled Cheque, or OTP.',
+        category: 'documents',
+        status: jobAnalysis.sensitiveDataRequests.detected ? 'critical' : 'passed',
+        advice: jobAnalysis.sensitiveDataRequests.detected
+          ? 'Warning: Never share PAN/Aadhaar/Bank details before receiving and verifying a formal written offer letter.'
+          : 'No premature requests for bank details or national IDs detected.',
+      },
+      {
+        id: 'chk-url',
+        title: 'Application Link & Destination Safety',
+        description: 'Inspect the destination domain to avoid phishing forms and masked link redirectors.',
+        category: 'channel',
+        status: jobAnalysis.domainMismatch.detected ? 'warning' : 'passed',
+        advice: jobAnalysis.domainMismatch.detected
+          ? 'Review the link carefully: Destination does not match the known employer domain.'
+          : 'Application destination aligns with recognized corporate or ATS infrastructure.',
+      },
+    ];
+
+    jobAnalysis.checklist = checklist;
+
     return {
       overallRiskScore: overall,
       riskLevel,
@@ -538,6 +864,7 @@ ${fullText.slice(0, 1500)}`;
       impersonationRisk: finalImpersonationRisk,
       rationale,
       recommendations,
+      whyThisScore,
     };
   }
 
@@ -605,5 +932,76 @@ ${fullText.slice(0, 1500)}`;
         timestamp: new Date().toISOString(),
       },
     };
+  }
+
+  /**
+   * Predefined realistic test cases for hackathon demonstration.
+   */
+  public getPredefinedTestCases() {
+    return [
+      {
+        id: 'clearao-analytics',
+        name: 'Clearao Analytics (Phonetic & Webfootprint Bug Fix)',
+        company: 'Clearao Analytics',
+        badge: 'Phonetic Match',
+        description: 'Test phonetic name resolution (Clearao -> Clearo.analytics) with verified LinkedIn and web presence.',
+        text: `Company: Clearao Analytics
+Role: AI Solutions Intern
+Stipend: ₹25,000/month
+Apply at our official portal: https://clearo.analytics/careers
+Requirements: Python, Prompt Engineering, React.
+Note: No application fee or security deposit is ever required from applicants.`,
+      },
+      {
+        id: 'telegram-deposit-scam',
+        name: 'Data Entry Deposit Scam (Telegram + Upfront Fee)',
+        company: 'Apex Digital Solutions',
+        badge: 'Critical Scam',
+        description: 'Classic student trap: high stipend for simple typing, refundable laptop security deposit, contact via Telegram.',
+        text: `HIRING: Online Data Entry & Form Filling Interns!
+Earn ₹45,000/month working 2 hours/day from home.
+Immediate selection - No technical interview required! Limited 15 seats available.
+To dispatch your company-provided MacBook Air, deposit a 100% refundable security courier fee of ₹4,500.
+Contact HR Manager Priya immediately on Telegram: https://t.me/apex_digital_hr_officer`,
+      },
+      {
+        id: 'stripe-greenhouse-authentic',
+        name: 'Stripe Software Engineering Intern (Authentic Enterprise)',
+        company: 'Stripe',
+        badge: 'Authentic ATS',
+        description: 'Verified enterprise company with authentic Greenhouse ATS application link and standard requirements.',
+        text: `Stripe is hiring Software Engineering Interns for Summer 2026.
+Location: Bengaluru / Remote
+Team: Payments Infrastructure
+Apply directly via our Greenhouse careers board:
+https://boards.greenhouse.io/stripe/jobs/591823902
+We look for strong CS fundamentals, distributed systems passion, and collaborative problem solving.`,
+      },
+      {
+        id: 'microsoft-impersonation',
+        name: 'Microsoft Impersonation (Domain Mismatch + Webmail)',
+        company: 'Microsoft',
+        badge: 'Impersonation Trap',
+        description: 'Scammers using Microsoft brand name but directing students to a fake domain and Gmail recruiter.',
+        text: `Congratulations! Your profile has been shortlisted for Microsoft Cloud Support Specialist.
+Salary: ₹8,50,000 LPA.
+Please complete your onboarding verification at:
+http://microsoft-careers-fasttrack.xyz/onboard/student
+Send your resume and national ID copy to our HR coordinator at: microsoft.recruitment.team.apac@gmail.com
+Hurry, offer expires in 24 hours.`,
+      },
+      {
+        id: 'task-scam-youtube',
+        name: 'YouTube Task Scam (Daily Commission Trap)',
+        company: 'Global Media Partners',
+        badge: 'Task Fraud',
+        description: 'Viral part-time job scam offering daily profit for liking videos, eventually locking money in crypto deposits.',
+        text: `Part-time Student Opportunity!
+Work 30 minutes daily: Like and subscribe to YouTube channels and submit screenshots.
+Earn ₹2,500 to ₹5,000 per day directly to your UPI ID!
+No experience needed. Daily payouts guaranteed.
+Join our official Telegram training group to receive task link: https://t.me/global_media_daily_tasks`,
+      },
+    ];
   }
 }

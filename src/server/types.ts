@@ -28,10 +28,54 @@ export interface ReputationSource {
   negativeThemes: string[];
 }
 
+export interface VerdictInfo {
+  status: 'SAFE_TO_APPLY' | 'PROCEED_WITH_CAUTION' | 'DO_NOT_APPLY';
+  title: string;
+  summary: string;
+  actionGuidance: string;
+  badges: { label: string; type: 'success' | 'warning' | 'danger' | 'info' }[];
+}
+
+export interface PreFlightChecklistItem {
+  id: string;
+  title: string;
+  description: string;
+  category: 'employer' | 'payment' | 'channel' | 'documents' | 'careers_page';
+  status: 'passed' | 'warning' | 'critical' | 'action_required';
+  advice: string;
+}
+
+export interface DetectedUrl {
+  url: string;
+  domain: string;
+  type: 'ats' | 'official_site' | 'unbranded_form' | 'messaging' | 'suspicious' | 'other';
+  isSafe: boolean;
+  platformName?: string;
+  warning?: string;
+}
+
+export interface InternshipRiskAssessment {
+  isPayToIntern: boolean;
+  isUnrealisticStipend: boolean;
+  isTaskScamPattern: boolean;
+  isCertificateTrap: boolean;
+  notes: string[];
+}
+
 export interface JobPostingAnalysis {
   detectedJobTitle?: string;
   detectedCompensation?: string;
   isCompensationSuspicious: boolean;
+  verdict: VerdictInfo;
+  checklist: PreFlightChecklistItem[];
+  detectedUrls: DetectedUrl[];
+  internshipAssessment: InternshipRiskAssessment;
+  careersPageMatch?: {
+    checked: boolean;
+    found: boolean;
+    url?: string;
+    note: string;
+  };
   paymentRequests: {
     detected: boolean;
     feeType?: string;
@@ -45,6 +89,7 @@ export interface JobPostingAnalysis {
   sensitiveDataRequests: {
     detected: boolean;
     items: string[];
+    riskExplanation?: string;
   };
   recruitmentChannel: {
     type: 'official_ats' | 'company_domain' | 'public_email' | 'messaging_app' | 'suspicious_form' | 'unknown';
@@ -56,6 +101,8 @@ export interface JobPostingAnalysis {
     name?: string;
     email?: string;
     emailType: 'corporate' | 'free_mail' | 'suspicious' | 'unknown';
+    phone?: string;
+    messagingHandle?: string;
     profileUrl?: string;
   };
   applicationUrl?: string;
@@ -125,6 +172,11 @@ export interface RiskBreakdown {
   impersonationRisk: number; // 0-100
   rationale: string[];
   recommendations: string[];
+  whyThisScore: {
+    positives: { point: string; evidence: string }[];
+    warnings: { point: string; evidence: string }[];
+    hazards: { point: string; evidence: string }[];
+  };
 }
 
 export interface AnalyzeRequest {

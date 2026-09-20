@@ -1,0 +1,6 @@
+{
+  "name": "JobShield",
+  "description": "AI-powered job scam and employer authenticity verification platform with autonomous web evidence gathering.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
